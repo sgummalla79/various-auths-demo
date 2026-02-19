@@ -3,18 +3,25 @@
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'mtls-api'
-primary_region = 'sjc'
+app = "mtls-api"
+primary_region = "iad"
 
 [build]
   dockerfile = "Dockerfile"
 
+[env]
+  PORT = "8443"
+
 [[services]]
-  protocol = 'tcp'
   internal_port = 8443
+  protocol = "tcp"
 
   [[services.ports]]
     port = 443
+    handlers = ["tls"]
+
+  [[services.ports]]
+    port = 8443
     handlers = []
 
 [[vm]]

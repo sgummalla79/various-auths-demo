@@ -1,36 +1,51 @@
 const https = require('https');
-const fs = require('fs');
 const express = require('express');
 
 const app = express();
 app.use(express.json());
 
-// --- Load certs from environment variables (Fly.io secrets) ---
-// The .replace() is needed because env vars store \n as literal string, not newline
-const tlsOptions = {
-  key:  process.env.SERVER_KEY.replace(/\\n/g, '\n'),
-  cert: process.env.SERVER_CERT.replace(/\\n/g, '\n'),
-
-  // Accept both your original CA and Salesforce's self-signed cert
-  ca: [
-    process.env.CA_CERT.replace(/\\n/g, '\n'),
-    process.env.SF_CLIENT_CERT.replace(/\\n/g, '\n'),
-  ],
-
-  requestCert: true,
-  rejectUnauthorized: true,
-};
-
-// --- Validate certs are present on startup ---
-['SERVER_KEY', 'SERVER_CERT', 'CA_CERT', 'SF_CLIENT_CERT'].forEach((envVar) => {
+// Validate env vars
+['SERVER_KEY', 'SERVER_CERT', 'CLIENT_CA_CERT'].forEach((envVar) => {
   if (!process.env[envVar]) {
-    console.error(`Missing required environment variable: ${envVar}`);
+    console.error(`❌ Missing required environment variable: ${envVar}`);
     process.exit(1);
   }
 });
 
-// --- Routes ---
+// Parse certs
+let tlsOptions;
+try {
+  tlsOptions = {
+    key:  process.env.SERVER_KEY.replace(/\\n/g, '\n'),
+    cert: process.env.SERVER_CERT.replace(/\\n/g, '\n'),
+    ca:   process.env.CLIENT_CA_CERT.replace(/\\n/g, '\n'),
+    requestCert: true,
+    rejectUnauthorized: true,
+  };
+  console.log('✅ Certs loaded successfully');
+} catch (e) {
+  console.error('❌ Failed to parse certs:', e.message);
+  process.exit(1);
+}
 
+// Middleware
+app.use((req, res, next) => {
+  const cert = req.socket.getPeerCertificate();
+
+  if (!req.client.authorized) {
+    console.log(`❌ Unauthorized: ${req.client.authorizationError}`);
+    return res.status(401).json({ error: 'Client certificate not authorized' });
+  }
+
+  if (!cert || Object.keys(cert).length === 0) {
+    return res.status(401).json({ error: 'No client certificate provided' });
+  }
+
+  console.log(`✅ Authenticated client: ${cert.subject.CN}`);
+  next();
+});
+
+// Routes
 app.get('/', (req, res) => {
   const clientCert = req.socket.getPeerCertificate();
   res.json({
@@ -43,25 +58,20 @@ app.get('/data', (req, res) => {
   res.json({ secret: 'Here is your protected data', timestamp: new Date() });
 });
 
-// --- Middleware: Enforce client cert on every request ---
-app.use((req, res, next) => {
-  const cert = req.socket.getPeerCertificate();
+// Always listen on 8443
+const PORT = 8443;
 
-  if (!req.client.authorized) {
-    return res.status(401).json({ error: 'Client certificate not authorized' });
-  }
+const server = https.createServer(tlsOptions, app);
 
-  if (!cert || Object.keys(cert).length === 0) {
-    return res.status(401).json({ error: 'No client certificate provided' });
-  }
-
-  console.log(`Authenticated client: ${cert.subject.CN}`);
-  next();
+server.on('tlsClientError', (err) => {
+  console.error('❌ TLS Client Error:', err.message);
 });
 
-// --- Start Server ---
-const PORT = process.env.PORT || 8443;
+server.on('error', (err) => {
+  console.error('❌ Server Error:', err.message);
+  process.exit(1);
+});
 
-https.createServer(tlsOptions, app).listen(PORT, () => {
-  console.log(`mTLS server running on port ${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ mTLS server running on port ${PORT}`);
 });

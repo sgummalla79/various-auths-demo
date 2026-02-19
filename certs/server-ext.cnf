@@ -8,5 +8,6 @@ distinguished_name = req_distinguished_name
 subjectAltName = @alt_names
 
 [alt_names]
-DNS.1 = mtls-api.fly.dev
-DNS.2 = localhost
+DNS.1 = api.sgummalla.net
+DNS.2 = mtls-api.fly.dev
+DNS.3 = localhost
