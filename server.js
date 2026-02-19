@@ -1,4 +1,5 @@
 const https = require('https');
+const http = require('http');
 const express = require('express');
 
 const app = express();
@@ -7,7 +8,7 @@ app.use(express.json());
 // Validate env vars
 ['SERVER_KEY', 'SERVER_CERT', 'CLIENT_CA_CERT'].forEach((envVar) => {
   if (!process.env[envVar]) {
-    console.error(`❌ Missing required environment variable: ${envVar}`);
+    console.error(`❌ Missing: ${envVar}`);
     process.exit(1);
   }
 });
@@ -20,58 +21,74 @@ try {
     cert: process.env.SERVER_CERT.replace(/\\n/g, '\n'),
     ca:   process.env.CLIENT_CA_CERT.replace(/\\n/g, '\n'),
     requestCert: true,
-    rejectUnauthorized: true,
+    rejectUnauthorized: false,
   };
-  console.log('✅ Certs loaded successfully');
+  console.log('✅ Certs loaded');
 } catch (e) {
-  console.error('❌ Failed to parse certs:', e.message);
+  console.error('❌ Cert parse error:', e.message);
   process.exit(1);
 }
 
-// Middleware
-app.use((req, res, next) => {
+// mTLS middleware
+const requireMTLS = (req, res, next) => {
   const cert = req.socket.getPeerCertificate();
-
-  if (!req.client.authorized) {
-    console.log(`❌ Unauthorized: ${req.client.authorizationError}`);
-    return res.status(401).json({ error: 'Client certificate not authorized' });
-  }
 
   if (!cert || Object.keys(cert).length === 0) {
     return res.status(401).json({ error: 'No client certificate provided' });
   }
 
-  console.log(`✅ Authenticated client: ${cert.subject.CN}`);
+  if (!req.client.authorized) {
+    return res.status(401).json({
+      error: 'Client certificate not authorized',
+      reason: req.client.authorizationError
+    });
+  }
+
+  console.log(`✅ Authenticated: ${cert.subject.CN}`);
   next();
+};
+
+// -----------------------------------------------
+// Routes
+// -----------------------------------------------
+
+// Public route — served by both servers
+app.get('/', (req, res) => {
+  res.json({ message: 'Public endpoint', status: 'ok' });
 });
 
-// Routes
-app.get('/', (req, res) => {
-  const clientCert = req.socket.getPeerCertificate();
+// Protected route — only meaningful via mTLS server (port 8443)
+app.get('/resource', requireMTLS, (req, res) => {
+  const cert = req.socket.getPeerCertificate();
   res.json({
-    message: 'mTLS handshake successful!',
-    clientCN: clientCert?.subject?.CN ?? 'unknown',
+    message: 'mTLS verified!',
+    clientCN: cert?.subject?.CN ?? 'unknown',
+    secret: 'Protected data',
+    timestamp: new Date(),
   });
 });
 
-app.get('/data', (req, res) => {
-  res.json({ secret: 'Here is your protected data', timestamp: new Date() });
+// -----------------------------------------------
+// Server 1: Plain HTTP on 8080
+// Handles port 443 traffic — Fly terminates TLS
+// -----------------------------------------------
+const httpServer = http.createServer(app);
+
+httpServer.listen(8080, '0.0.0.0', () => {
+  console.log('✅ HTTP server running on port 8080 (public)');
 });
 
-// Always listen on 8443
-const PORT = 8443;
+// -----------------------------------------------
+// Server 2: HTTPS on 8443
+// Handles port 8443 traffic — raw TCP passthrough
+// App owns TLS handshake — true mTLS
+// -----------------------------------------------
+const httpsServer = https.createServer(tlsOptions, app);
 
-const server = https.createServer(tlsOptions, app);
-
-server.on('tlsClientError', (err) => {
-  console.error('❌ TLS Client Error:', err.message);
+httpsServer.on('tlsClientError', (err) => {
+  console.error('❌ TLS Error:', err.message);
 });
 
-server.on('error', (err) => {
-  console.error('❌ Server Error:', err.message);
-  process.exit(1);
-});
-
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ mTLS server running on port ${PORT}`);
+httpsServer.listen(8443, '0.0.0.0', () => {
+  console.log('✅ HTTPS mTLS server running on port 8443 (protected)');
 });
