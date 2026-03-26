@@ -1,18 +1,28 @@
-# Use official Node.js LTS image
 FROM node:20-alpine
 
-# Create app directory
 WORKDIR /app
 
-# Copy package files and install dependencies
+# Install dependencies
 COPY package*.json ./
-RUN npm install --production
+RUN npm install --omit=dev
 
-# Copy the rest of the app
-COPY . .
+# Copy source — explicit list ensures nothing is silently excluded
+COPY server.js     ./server.js
+COPY src/          ./src/
 
-# Expose the port your app runs on
+# Validate critical files exist at build time — fail fast if missing
+RUN node --check server.js && \
+    node --check src/routes/auth.js && \
+    node --check src/routes/users.js && \
+    node --check src/routes/clients.js && \
+    node --check src/routes/resource.js && \
+    node --check src/middleware/index.js && \
+    node --check src/config/clients.js && \
+    node --check src/data/users.js && \
+    node --check src/data/registeredClients.js && \
+    echo "✅ All files validated"
+
+EXPOSE 8080
 EXPOSE 8443
 
-# Start the server
 CMD ["node", "server.js"]
