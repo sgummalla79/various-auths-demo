@@ -1,9 +1,10 @@
 {
   "name": "mtls-demo",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "mTLS API with JWT assertion auth and user management",
+  "main": "server.js",
   "scripts": {
+    "start": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -11,6 +12,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.2"
   }
 }
