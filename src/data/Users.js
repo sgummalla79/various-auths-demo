@@ -1,4 +1,5 @@
 // In-memory user store — replace with a database in production
+
 const USERS = {
   sgummalla: {
     id:         '001',

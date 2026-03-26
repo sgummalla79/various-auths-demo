@@ -1,0 +1,607 @@
+{
+  "info": {
+    "name": "mTLS + JWT API",
+    "description": "Full flow: JWT assertion \u2192 access_token \u2192 protected resources.\n\nSetup:\n1. Postman Settings \u2192 Certificates \u2192 Add Certificate:\n   - Host: localhost, Port: 8443  (or api.sgummalla.net, Port: 8443)\n   - CRT: certs/client.crt  KEY: certs/client.key  CA: certs/ca.crt\n2. Set collection variables:\n   - private_key: paste full contents of certs/client.key\n   - username: sgummalla@exp-cloud.org\n3. Run requests in order.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "base_url_mtls",
+      "value": "https://localhost:8443",
+      "type": "string"
+    },
+    {
+      "key": "jwt_bearer_private_key",
+      "value": "PASTE_CONTENTS_OF_client.key_HERE",
+      "type": "string"
+    },
+    {
+      "key": "jwt_bearer_issuer",
+      "value": "postman-client",
+      "type": "string"
+    },
+    {
+      "key": "jwt_bearer_username",
+      "value": "sgummalla@exp-cloud.org",
+      "type": "string"
+    },
+    {
+      "key": "cc_client_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "cc_client_secret",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "assertion",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1 \u2014 POST /auth/token  (JWT assertion \u2192 access_token)",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/auth/token",
+        "description": "Token endpoint \u2014 the collection pre-request script auto-generates the JWT assertion and calls this endpoint automatically before any other request. You can also send this manually to force a token refresh.",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"grant_type\": \"urn:ietf:params:oauth:grant-type:jwt-bearer\",\n  \"assertion\": \"{{assertion}}\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Generate JWT assertion for the jwt-bearer token request.",
+              "// Collection-level script skips /auth/token so we build it here.",
+              "",
+              "if (typeof navigator === 'undefined') { navigator = { appName: 'postman' }; }",
+              "if (typeof window   === 'undefined') { window   = {}; }",
+              "",
+              "pm.sendRequest('https://kjur.github.io/jsrsasign/jsrsasign-latest-all-min.js', (err, res) => {",
+              "  if (err) { throw new Error('Failed to load jsrsasign: ' + err); }",
+              "  eval(res.text());",
+              "",
+              "  const rawKey    = pm.collectionVariables.get('jwt_bearer_private_key');",
+              "  const username  = pm.collectionVariables.get('jwt_bearer_username');",
+              "  const baseUrl   = pm.collectionVariables.get('base_url');",
+              "  const now       = Math.floor(Date.now() / 1000);",
+              "",
+              "  // Normalize key \u2014 Postman stores newlines as literal \\n",
+              "  const privateKeyPem = rawKey.replace(/\\\\n/g, '\\n').trim();",
+              "",
+              "  // Parse key object \u2014 handles PKCS8 and RSA formats",
+              "  let keyObj;",
+              "  try {",
+              "    keyObj = KEYUTIL.getKey(privateKeyPem);",
+              "  } catch(e) {",
+              "    throw new Error('Failed to parse private key: ' + e.message + ' \u2014 check private_key variable');",
+              "  }",
+              "",
+              "  const header  = { alg: 'RS256', typ: 'JWT' };",
+              "  const payload = {",
+              "    iss:      pm.collectionVariables.get('jwt_bearer_issuer'),",
+              "    sub:      'postman-client',",
+              "    aud:      baseUrl,",
+              "    iat:      now,",
+              "    exp:      now + 300,",
+              "    jti:      'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+              "      const r = Math.random() * 16 | 0;",
+              "      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);",
+              "    }),",
+              "    username: username",
+              "  };",
+              "",
+              "  const assertion = KJUR.jws.JWS.sign('RS256', JSON.stringify(header), JSON.stringify(payload), keyObj);",
+              "",
+              "  pm.collectionVariables.set('assertion', assertion);",
+              "  console.log('\u2705 Assertion generated for:', username);",
+              "});"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Returns access_token', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.access_token).to.be.a('string');",
+              "  pm.expect(body.token_type).to.eql('Bearer');",
+              "  pm.expect(body.expires_in).to.eql(3600);",
+              "  pm.collectionVariables.set('access_token', body.access_token);",
+              "  console.log('\u2705 access_token saved');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "1b \u2014 POST /auth/token  (client_credentials)",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/auth/token",
+        "description": "Get a system-level token using client_id + client_secret.\nRun POST /clients/register first to get credentials.\nThe collection pre-request script skips auto-token for this request.",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"grant_type\": \"client_credentials\",\n  \"client_id\": \"{{cc_client_id}}\",\n  \"client_secret\": \"{{cc_client_secret}}\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Returns client_credentials token', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.access_token).to.be.a('string');",
+              "  pm.expect(body.scope).to.eql('api:full');",
+              "  const payload = JSON.parse(atob(body.access_token.split('.')[1]));",
+              "  pm.expect(payload.type).to.eql('client_credentials_token');",
+              "  pm.expect(payload.role).to.eql('admin');",
+              "  pm.collectionVariables.set('access_token', body.access_token);",
+              "  console.log('\u2705 client_credentials token \u2014 clientId:', payload.clientId);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 \u2014 GET /users  (admin sees all)",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/users",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ]
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "// Decode token payload to show which user/role is being used",
+              "const token = pm.collectionVariables.get('access_token');",
+              "if (token) {",
+              "  const payload = JSON.parse(atob(token.split('.')[1]));",
+              "  console.log('\ud83d\udd0d Token role:', payload.role, '| username:', payload.username);",
+              "}",
+              "",
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Returns users array', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.users).to.be.an('array');",
+              "  console.log('Users returned:', body.users.length);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 \u2014 GET /users/:username  (self or admin)",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/users/{{username}}",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ]
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Returns user object', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.user).to.be.an('object');",
+              "  pm.expect(body.user.username).to.eql(pm.collectionVariables.get('jwt_bearer_username'));",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 \u2014 GET /resource  (mTLS + Bearer token)",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url_mtls}}/resource",
+        "description": "Requires mTLS client cert on port 8443.\nConfigure in Postman Settings \u2192 Certificates.",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ]
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('mTLS + JWT verified', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.message).to.eql('mTLS + JWT verified!');",
+              "  pm.expect(body.clientCN).to.be.a('string');",
+              "  pm.expect(body.user.username).to.be.a('string');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users (admin only)",
+      "item": [
+        {
+          "name": "POST /users  (create)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/users",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key\": \"carol\",\n  \"username\": \"carol@exp-cloud.org\",\n  \"role\": \"viewer\",\n  \"allowedCNs\": [\"MyClient\"]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('User created', () => {",
+                  "  pm.expect(pm.response.json().message).to.eql('User created');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /users/:username  (update)",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/users/carol@exp-cloud.org",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"admin\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('User updated', () => {",
+                  "  pm.expect(pm.response.json().message).to.eql('User updated');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /users/:username",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/users/carol@exp-cloud.org",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('User deleted', () => {",
+                  "  pm.expect(pm.response.json().message).to.eql('User deleted');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Clients (admin only)",
+      "item": [
+        {
+          "name": "POST /clients/register",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/clients/register",
+            "description": "Register a new client app. Returns client_id + client_secret.\nStore the secret securely \u2014 it will never be shown again.",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"My integration app\",\n  \"scope\": \"api:full\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Returns client credentials', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.client_id).to.be.a('string');",
+                  "  pm.expect(body.client_secret).to.be.a('string');",
+                  "  // Save for use in client_credentials token request",
+                  "  pm.collectionVariables.set('cc_client_id', body.client_id);",
+                  "  pm.collectionVariables.set('cc_client_secret', body.client_secret);",
+                  "  console.log('\u2705 client_id saved:', body.client_id);",
+                  "  console.log('\u26a0\ufe0f  Store this secret \u2014 shown once:', body.client_secret);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /clients",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/clients",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns client list', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.clients).to.be.an('array');",
+                  "  console.log('Total clients:', body.total);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /clients/:clientId",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/clients/{{client_id}}",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Client revoked', () => {",
+                  "  pm.expect(pm.response.json().message).to.eql('Client revoked');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Error cases",
+      "item": [
+        {
+          "name": "GET /resource without token \u2192 401",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url_mtls}}/resource"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /users other user as viewer \u2192 403",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/users/sgummalla@exp-cloud.org",
+            "description": "Get a viewer token first (run request 1 with username=abhiram@exp-cloud.org), then test here.",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer VIEWER_TOKEN_HERE"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+          "// Collection pre-request: auto-obtain access_token before every request.",
+          "// Skips token refresh for the /auth/token request itself.",
+          "// \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+          "",
+          "const requestUrl = pm.request.url.toString();",
+          "if (requestUrl.includes('/auth/token')) { return; }",
+          "",
+          "// Check if current token is still valid",
+          "const existingToken = pm.collectionVariables.get('access_token');",
+          "if (existingToken) {",
+          "  try {",
+          "    const p        = JSON.parse(atob(existingToken.split('.')[1]));",
+          "    const username = pm.collectionVariables.get('jwt_bearer_username');",
+          "    const secsLeft = p.exp - Math.floor(Date.now() / 1000);",
+          "    const tokenUser = p.username || p.clientId;",
+          "    if (secsLeft > 60 && tokenUser === username) {",
+          "      console.log('\u2705 Token valid for:', tokenUser, '| role:', p.role, '| expires in:', secsLeft + 's');",
+          "      return;",
+          "    }",
+          "  } catch(e) { /* invalid token \u2014 fall through to refresh */ }",
+          "}",
+          "",
+          "if (typeof navigator === 'undefined') { navigator = { appName: 'postman' }; }",
+          "if (typeof window   === 'undefined') { window   = {}; }",
+          "",
+          "pm.sendRequest('https://kjur.github.io/jsrsasign/jsrsasign-latest-all-min.js', (err, res) => {",
+          "  if (err) { throw new Error('Failed to load jsrsasign: ' + err); }",
+          "  eval(res.text());",
+          "",
+          "  const rawKey    = pm.collectionVariables.get('jwt_bearer_private_key');",
+          "  const username  = pm.collectionVariables.get('jwt_bearer_username');",
+          "  const baseUrl   = pm.collectionVariables.get('base_url');",
+          "  const now       = Math.floor(Date.now() / 1000);",
+          "",
+          "  // Normalize key \u2014 Postman stores newlines as literal \\n",
+          "  const privateKeyPem = rawKey.replace(/\\\\n/g, '\\n').trim();",
+          "",
+          "  // Parse key object \u2014 handles PKCS8 and RSA formats",
+          "  let keyObj;",
+          "  try {",
+          "    keyObj = KEYUTIL.getKey(privateKeyPem);",
+          "  } catch(e) {",
+          "    throw new Error('Failed to parse private key: ' + e.message + ' \u2014 check private_key variable');",
+          "  }",
+          "",
+          "  const header  = { alg: 'RS256', typ: 'JWT' };",
+          "  const payload = {",
+          "    iss:      pm.collectionVariables.get('jwt_bearer_issuer'),",
+          "    sub:      'postman-client',",
+          "    aud:      baseUrl,",
+          "    iat:      now,",
+          "    exp:      now + 300,",
+          "    jti:      'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+          "      const r = Math.random() * 16 | 0;",
+          "      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);",
+          "    }),",
+          "    username: username",
+          "  };",
+          "",
+          "  const assertion = KJUR.jws.JWS.sign('RS256', JSON.stringify(header), JSON.stringify(payload), keyObj);",
+          "",
+          "  // Exchange assertion for access_token",
+          "  pm.sendRequest({",
+          "    url:    baseUrl + '/auth/token',",
+          "    method: 'POST',",
+          "    header: { 'Content-Type': 'application/json' },",
+          "    body: { mode: 'raw', raw: JSON.stringify({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }) }",
+          "  }, (tokenErr, tokenRes) => {",
+          "    if (tokenErr) { throw new Error('Token request failed: ' + tokenErr); }",
+          "    if (tokenRes.code !== 200) { throw new Error('Token request failed: ' + tokenRes.status + ' ' + tokenRes.text()); }",
+          "    pm.collectionVariables.set('access_token', tokenRes.json().access_token);",
+          "    console.log('\u2705 Fresh access_token obtained for:', username);",
+          "  });",
+          "});"
+        ]
+      }
+    }
+  ]
+}

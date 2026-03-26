@@ -3,9 +3,10 @@ const http    = require('http');
 const fs      = require('fs');
 const express = require('express');
 
-const authRouter     = require('./routes/auth');
-const resourceRouter = require('./routes/resource');
-const usersRouter    = require('./routes/users');
+const authRouter     = require('./src/routes/auth');
+const resourceRouter = require('./src/routes/resource');
+const usersRouter    = require('./src/routes/users');
+const clientsRouter  = require('./src/routes/clients');
 
 const app = express();
 app.use(express.json());
@@ -54,9 +55,10 @@ try {
 // -----------------------------------------------
 // Routes
 // -----------------------------------------------
-app.use('/auth',     authRouter);      // POST /auth/token  — JWT assertion, no mTLS
-app.use('/users',    usersRouter);     // CRUD /users       — Bearer token, role-based
-app.use('/resource', resourceRouter);  // GET  /resource    — mTLS + Bearer token
+app.use('/auth',     authRouter);      // POST /auth/token        — JWT assertion / client_credentials
+app.use('/clients',  clientsRouter);   // POST /clients/register  — register clients (admin)
+app.use('/users',    usersRouter);     // CRUD /users             — Bearer token, role-based
+app.use('/resource', resourceRouter);  // GET  /resource          — mTLS + Bearer token
 
 // -----------------------------------------------
 // Server 1 — HTTP on 8080
