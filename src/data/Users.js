@@ -13,6 +13,18 @@ const USERS = {
     role:       'viewer',
     allowedCNs: ['MyClient'],
   },
+  akhila: {
+    id:         '003',
+    username:   'akhila@exp-cloud.org',
+    role:       'viewer',
+    allowedCNs: ['MyClient'],
+  },
+  rajanipriya: {
+    id:         '004',
+    username:   'rajanipriya@exp-cloud.org',
+    role:       'admin',
+    allowedCNs: ['MyClient'],
+  },
 };
 
 module.exports = { USERS };

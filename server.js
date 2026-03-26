@@ -6,7 +6,8 @@ const express = require('express');
 const authRouter     = require('./src/routes/auth');
 const resourceRouter = require('./src/routes/resource');
 const usersRouter    = require('./src/routes/users');
-const clientsRouter  = require('./src/routes/clients');
+const clientsRouter   = require('./src/routes/clients');
+const patientsRouter  = require('./src/routes/patients');
 
 const app = express();
 app.use(express.json());
@@ -58,6 +59,7 @@ try {
 app.use('/auth',     authRouter);      // POST /auth/token        — JWT assertion / client_credentials
 app.use('/clients',  clientsRouter);   // POST /clients/register  — register clients (admin)
 app.use('/users',    usersRouter);     // CRUD /users             — Bearer token, role-based
+app.use('/patients', patientsRouter);  // CRUD /patients          — Bearer token, role-based
 app.use('/resource', resourceRouter);  // GET  /resource          — mTLS + Bearer token
 
 // -----------------------------------------------

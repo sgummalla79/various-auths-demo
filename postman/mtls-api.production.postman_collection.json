@@ -54,6 +54,11 @@
       "key": "update_username",
       "value": "carol@exp-cloud.org",
       "type": "string"
+    },
+    {
+      "key": "patient_id",
+      "value": "pat-001",
+      "type": "string"
     }
   ],
   "item": [
@@ -478,6 +483,167 @@
       ]
     },
     {
+      "name": "Patients",
+      "item": [
+        {
+          "name": "GET /patients  (admin=all, viewer=own)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/patients",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns patients array', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.patients).to.be.an('array');",
+                  "  console.log('Patients returned:', body.total);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /patients/:id  (admin=any, viewer=own)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/patients/{{patient_id}}",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns patient object', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.patient).to.be.an('object');",
+                  "  pm.expect(body.patient.id).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /patients  (create)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/patients",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Alice\",\n  \"lastName\": \"Cooper\",\n  \"dob\": \"1995-06-20\",\n  \"gender\": \"female\",\n  \"bloodType\": \"A+\",\n  \"phone\": \"555-200-3001\",\n  \"email\": \"alice.cooper@example.com\",\n  \"diagnosis\": \"Seasonal Allergies\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Patient created', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.patient.id).to.be.a('string');",
+                  "  // Save id for subsequent requests",
+                  "  pm.collectionVariables.set('patient_id', body.patient.id);",
+                  "  console.log('\u2705 patient_id saved:', body.patient.id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /patients/:id  (admin=any, viewer=own)",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/patients/{{patient_id}}",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"diagnosis\": \"Seasonal Allergies \\u2014 under treatment\",\n  \"phone\": \"555-200-9999\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Patient updated', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.patient).to.be.an('object');",
+                  "  pm.expect(body.patient.updatedAt).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /patients/:id  (admin only)",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/patients/{{patient_id}}",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Patient deleted', () => {",
+                  "  pm.expect(pm.response.json().message).to.eql('Patient deleted');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "Error cases",
       "item": [
         {
@@ -503,6 +669,53 @@
             "method": "GET",
             "url": "{{base_url}}/users/{{jwt_bearer_username}}",
             "description": "Get a viewer token first (run request 1 with username=abhiram@exp-cloud.org), then test here.",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer VIEWER_TOKEN_HERE"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /patients/:id viewer accessing other's record \u2192 403",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/patients/pat-001",
+            "description": "Get a viewer token first (e.g. abhiram), then try to access a record created by sgummalla.",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer VIEWER_TOKEN_HERE"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /patients/:id as viewer \u2192 403",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/patients/pat-003",
             "header": [
               {
                 "key": "Authorization",
