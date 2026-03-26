@@ -1,10 +1,10 @@
 const express = require('express');
 const jwt     = require('jsonwebtoken');
 
-const { USERS }                                          = require('../data/users');
-const { JWT_SECRET }                                     = require('../middleware');
+const { JWT_SECRET }                                      = require('../middleware');
 const { getClientPublicKey }                              = require('../config/clients');
-const { registeredClients }                              = require('../data/registeredClients');
+const User                                                = require('../models/User');
+const Client                                              = require('../models/Client');
 
 const router = express.Router();
 
@@ -43,7 +43,7 @@ function verifyAssertion(assertion) {
 //   Client proves identity via shared secret.
 //   Token is scoped to the client — system-level (admin) access.
 // -----------------------------------------------
-router.post('/token', (req, res) => {
+router.post('/token', async (req, res) => {
   const grantType = req.body.grant_type || GRANT_TYPE_JWT_BEARER;
 
   if (![GRANT_TYPE_JWT_BEARER, GRANT_TYPE_CLIENT_CREDENTIALS].includes(grantType)) {
@@ -67,7 +67,7 @@ router.post('/token', (req, res) => {
       });
     }
 
-    const client = registeredClients[client_id];
+    const client = await Client.findOne({ clientId: client_id });
     if (!client) {
       console.warn(`❌ client_credentials — unknown client_id: '${client_id}'`);
       return res.status(401).json({ error: 'invalid_client', error_description: 'Unknown client_id' });
@@ -76,7 +76,7 @@ router.post('/token', (req, res) => {
     // Constant-time comparison to prevent timing attacks
     const crypto = require('crypto');
     const providedHash = crypto.createHash('sha256').update(client_secret).digest('hex');
-    const storedBuf    = Buffer.from(client.clientSecretHash, 'hex');
+    const storedBuf = Buffer.from(client.clientSecretHash, 'hex');
     const providedBuf  = Buffer.from(providedHash,            'hex');
 
     if (storedBuf.length !== providedBuf.length || !crypto.timingSafeEqual(storedBuf, providedBuf)) {
@@ -137,7 +137,7 @@ router.post('/token', (req, res) => {
     });
   }
 
-  const user = Object.values(USERS).find(u => u.username === claims.username);
+  const user = await User.findOne({ username: claims.username });
   if (!user) {
     return res.status(404).json({ error: 'invalid_grant', error_description: `User '${claims.username}' not found` });
   }

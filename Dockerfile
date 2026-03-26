@@ -20,6 +20,10 @@ RUN node --check server.js && \
     node --check src/config/clients.js && \
     node --check src/data/users.js && \
     node --check src/data/registeredClients.js && \
+    node --check src/config/db.js && \
+    node --check src/models/User.js && \
+    node --check src/models/Patient.js && \
+    node --check src/models/Client.js && \
     echo "✅ All files validated"
 
 EXPOSE 8080
