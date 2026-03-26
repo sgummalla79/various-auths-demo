@@ -54,7 +54,10 @@ router.post('/token', (req, res) => {
   }
 
   // ── client_credentials ─────────────────────────────────────────
-  if (grantType === GRANT_TYPE_CLIENT_CREDENTIALS) {
+  // Salesforce External Credentials sends grant_type=client_credentials
+  // BUT also sends client_assertion (JWT). If client_assertion is present,
+  // route to the jwt-bearer handler regardless of grant_type.
+  if (grantType === GRANT_TYPE_CLIENT_CREDENTIALS && !req.body.client_assertion) {
     const { client_id, client_secret } = req.body;
 
     if (!client_id || !client_secret) {
