@@ -1,7 +1,7 @@
 // Run once: node -r dotenv/config src/data/seed.js
 const mongoose = require('mongoose');
-const User    = require('../models/User');
-const Patient = require('../models/Patient');
+const User    = require('../models/user');
+const Patient = require('../models/patient');
 
 async function seed() {
   await mongoose.connect(process.env.MONGODB_URI);

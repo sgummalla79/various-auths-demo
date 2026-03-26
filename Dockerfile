@@ -14,9 +14,9 @@ COPY src/          ./src/
 RUN node --check server.js && \
     node --check src/config/db.js && \
     node --check src/config/clients.js && \
-    node --check src/models/User.js && \
-    node --check src/models/Patient.js && \
-    node --check src/models/Client.js && \
+    node --check src/models/user.js && \
+    node --check src/models/patient.js && \
+    node --check src/models/client.js && \
     node --check src/routes/auth.js && \
     node --check src/routes/users.js && \
     node --check src/routes/clients.js && \

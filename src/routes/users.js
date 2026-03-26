@@ -1,6 +1,6 @@
 const crypto  = require('crypto');
 const express = require('express');
-const User    = require('../models/User');
+const User    = require('../models/user');
 const { requireUserToken, requireRole } = require('../middleware');
 
 const router     = express.Router();

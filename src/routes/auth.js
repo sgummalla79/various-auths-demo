@@ -3,8 +3,8 @@ const jwt     = require('jsonwebtoken');
 
 const { JWT_SECRET }                                      = require('../middleware');
 const { getClientPublicKey }                              = require('../config/clients');
-const User                                                = require('../models/User');
-const Client                                              = require('../models/Client');
+const User                                                = require('../models/user');
+const Client                                              = require('../models/client');
 
 const router = express.Router();
 
