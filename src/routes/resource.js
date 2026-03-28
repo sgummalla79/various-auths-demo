@@ -1,16 +1,16 @@
 const express = require('express');
 
-const { requireMTLS, requireUserToken } = require('../middleware');
+const { requireUserToken } = require('../middleware');
 
 const router = express.Router();
 
 // -----------------------------------------------
 // GET /resource
 //
-// Double-protected: requires both mTLS client certificate (port 8443)
-// and a valid Bearer access_token in the Authorization header.
+// mTLS is enforced globally in server.js for all routes.
+// This route additionally requires a valid Bearer access_token.
 // -----------------------------------------------
-router.get('/', requireMTLS, requireUserToken, (req, res) => {
+router.get('/', requireUserToken, (req, res) => {
   const cert = req.socket.getPeerCertificate();
   res.json({
     message:   'mTLS + JWT verified!',

@@ -1,19 +1,19 @@
 const express = require('express');
 const jwt     = require('jsonwebtoken');
+const crypto  = require('crypto');
 
-const { JWT_SECRET }                                      = require('../middleware');
-const { getClientPublicKey }                              = require('../config/clients');
-const User                                                = require('../models/user');
-const Client                                              = require('../models/client');
+const { JWT_SECRET }         = require('../middleware');
+const { getClientPublicKey } = require('../config/clients');
+const User                   = require('../models/user');
+const Client                 = require('../models/client');
 
 const router = express.Router();
 
-const ACCESS_TOKEN_EXPIRY = '1h';
-
+const ACCESS_TOKEN_EXPIRY           = '1h';
 const GRANT_TYPE_JWT_BEARER         = 'urn:ietf:params:oauth:grant-type:jwt-bearer';
 const GRANT_TYPE_CLIENT_CREDENTIALS = 'client_credentials';
 
-// Replay prevention for jwt-bearer assertions (in-memory; use Redis in production)
+// Replay prevention (in-memory; use Redis in production)
 const usedJtis = new Set();
 
 // -----------------------------------------------
@@ -33,8 +33,15 @@ function verifyAssertion(assertion) {
 // -----------------------------------------------
 // POST /auth/token
 //
+// mTLS NOT required — Salesforce and other OAuth clients cannot attach
+// a client certificate during the token request.
+//
+// Accepts both:
+//   Content-Type: application/json
+//   Content-Type: application/x-www-form-urlencoded
+//
 // grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer  (default)
-//   Body: { assertion, username }
+//   Body: { assertion }
 //   Client proves identity via signed JWT assertion.
 //   Token is scoped to the user — role-based authorization applies.
 //
@@ -53,17 +60,14 @@ router.post('/token', async (req, res) => {
     });
   }
 
-  // ── client_credentials ─────────────────────────────────────────
-  // Salesforce External Credentials sends grant_type=client_credentials
-  // BUT also sends client_assertion (JWT). If client_assertion is present,
-  // route to the jwt-bearer handler regardless of grant_type.
-  if (grantType === GRANT_TYPE_CLIENT_CREDENTIALS && !req.body.client_assertion) {
+  // ── client_credentials ───────────────────────────────────────────────────
+  if (grantType === GRANT_TYPE_CLIENT_CREDENTIALS) {
     const { client_id, client_secret } = req.body;
 
     if (!client_id || !client_secret) {
       return res.status(400).json({
         error:             'invalid_request',
-        error_description: 'client_id and client_secret are required for client_credentials grant',
+        error_description: 'client_id and client_secret are required',
       });
     }
 
@@ -73,10 +77,8 @@ router.post('/token', async (req, res) => {
       return res.status(401).json({ error: 'invalid_client', error_description: 'Unknown client_id' });
     }
 
-    // Constant-time comparison to prevent timing attacks
-    const crypto = require('crypto');
     const providedHash = crypto.createHash('sha256').update(client_secret).digest('hex');
-    const storedBuf = Buffer.from(client.clientSecretHash, 'hex');
+    const storedBuf    = Buffer.from(client.clientSecretHash, 'hex');
     const providedBuf  = Buffer.from(providedHash,            'hex');
 
     if (storedBuf.length !== providedBuf.length || !crypto.timingSafeEqual(storedBuf, providedBuf)) {
@@ -85,12 +87,7 @@ router.post('/token', async (req, res) => {
     }
 
     const access_token = jwt.sign(
-      {
-        type:     'client_credentials_token',
-        clientId: client_id,
-        role:     'admin',
-        scope:    client.scope,
-      },
+      { type: 'client_credentials_token', clientId: client_id, role: 'admin', scope: client.scope },
       JWT_SECRET,
       { expiresIn: ACCESS_TOKEN_EXPIRY }
     );
@@ -99,7 +96,7 @@ router.post('/token', async (req, res) => {
     return res.json({ access_token, token_type: 'Bearer', expires_in: 3600, scope: client.scope });
   }
 
-  // ── jwt-bearer ─────────────────────────────────────────────────
+  // ── jwt-bearer ───────────────────────────────────────────────────────────
   const assertion = req.body.client_assertion || req.body.assertion;
 
   if (!assertion) {
@@ -143,12 +140,7 @@ router.post('/token', async (req, res) => {
   }
 
   const access_token = jwt.sign(
-    {
-      type:     'access_token',
-      userId:   user.id,
-      username: claims.username,
-      role:     user.role,
-    },
+    { type: 'access_token', userId: user.id, username: claims.username, role: user.role },
     JWT_SECRET,
     { expiresIn: ACCESS_TOKEN_EXPIRY }
   );

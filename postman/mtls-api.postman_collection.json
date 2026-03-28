@@ -1,17 +1,12 @@
 {
   "info": {
     "name": "mTLS + JWT API",
-    "description": "Full flow: JWT assertion \u2192 access_token \u2192 protected resources.\n\nSetup:\n1. Postman Settings \u2192 Certificates \u2192 Add Certificate:\n   - Host: localhost, Port: 8443  (or api.sgummalla.net, Port: 8443)\n   - CRT: certs/client.crt  KEY: certs/client.key  CA: certs/ca.crt\n2. Set collection variables:\n   - private_key: paste full contents of certs/client.key\n   - username: sgummalla@exp-cloud.org\n3. Run requests in order.",
+    "description": "Full flow: JWT assertion → access_token → protected resources.\n\nSetup:\n1. Postman Settings → Certificates → Add Certificate:\n   - Host: localhost, Port: 8443\n   - CRT: certs/client.crt  KEY: certs/client.key  CA: certs/ca.crt\n2. Set collection variables:\n   - jwt_bearer_private_key: paste full contents of certs/client.key\n   - jwt_bearer_username: sgummalla@exp-cloud.org\n3. Run requests in order.\n\nAll requests go through https://localhost:8443 (single mTLS port).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {
       "key": "base_url",
-      "value": "http://localhost:8080",
-      "type": "string"
-    },
-    {
-      "key": "base_url_mtls",
       "value": "https://localhost:8443",
       "type": "string"
     },
@@ -58,11 +53,11 @@
   ],
   "item": [
     {
-      "name": "1 \u2014 POST /auth/token  (JWT assertion \u2192 access_token)",
+      "name": "1 — POST /auth/token  (JWT assertion → access_token)",
       "request": {
         "method": "POST",
         "url": "{{base_url}}/auth/token",
-        "description": "Token endpoint \u2014 the collection pre-request script auto-generates the JWT assertion and calls this endpoint automatically before any other request. You can also send this manually to force a token refresh.",
+        "description": "JWT bearer token endpoint — mTLS not required.\nThe collection pre-request script auto-generates the JWT assertion and calls this endpoint automatically before any other request.",
         "header": [
           {
             "key": "Content-Type",
@@ -95,15 +90,15 @@
               "  const baseUrl   = pm.collectionVariables.get('base_url');",
               "  const now       = Math.floor(Date.now() / 1000);",
               "",
-              "  // Normalize key \u2014 Postman stores newlines as literal \\n",
+              "  // Normalize key — Postman stores newlines as literal \\n",
               "  const privateKeyPem = rawKey.replace(/\\\\n/g, '\\n').trim();",
               "",
-              "  // Parse key object \u2014 handles PKCS8 and RSA formats",
+              "  // Parse key object — handles PKCS8 and RSA formats",
               "  let keyObj;",
               "  try {",
               "    keyObj = KEYUTIL.getKey(privateKeyPem);",
               "  } catch(e) {",
-              "    throw new Error('Failed to parse private key: ' + e.message + ' \u2014 check private_key variable');",
+              "    throw new Error('Failed to parse private key: ' + e.message + ' — check private_key variable');",
               "  }",
               "",
               "  const header  = { alg: 'RS256', typ: 'JWT' };",
@@ -123,7 +118,7 @@
               "  const assertion = KJUR.jws.JWS.sign('RS256', JSON.stringify(header), JSON.stringify(payload), keyObj);",
               "",
               "  pm.collectionVariables.set('assertion', assertion);",
-              "  console.log('\u2705 Assertion generated for:', username);",
+              "  console.log('✅ Assertion generated for:', username);",
               "});"
             ]
           }
@@ -139,7 +134,7 @@
               "  pm.expect(body.token_type).to.eql('Bearer');",
               "  pm.expect(body.expires_in).to.eql(3600);",
               "  pm.collectionVariables.set('access_token', body.access_token);",
-              "  console.log('\u2705 access_token saved');",
+              "  console.log('✅ access_token saved');",
               "});"
             ]
           }
@@ -147,7 +142,7 @@
       ]
     },
     {
-      "name": "1b \u2014 POST /auth/token  (client_credentials)",
+      "name": "1b — POST /auth/token  (client_credentials)",
       "request": {
         "method": "POST",
         "url": "{{base_url}}/auth/token",
@@ -177,7 +172,7 @@
               "  pm.expect(payload.type).to.eql('client_credentials_token');",
               "  pm.expect(payload.role).to.eql('admin');",
               "  pm.collectionVariables.set('access_token', body.access_token);",
-              "  console.log('\u2705 client_credentials token \u2014 clientId:', payload.clientId);",
+              "  console.log('✅ client_credentials token — clientId:', payload.clientId);",
               "});"
             ]
           }
@@ -185,7 +180,148 @@
       ]
     },
     {
-      "name": "2 \u2014 GET /users  (admin sees all)",
+      "name": "1c — POST /auth/token  (JWT assertion — form-urlencoded)",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/auth/token",
+        "description": "Same as request 1 but sends the body as application/x-www-form-urlencoded instead of JSON.\nUseful for OAuth clients that require form-encoded token requests (e.g. Salesforce).",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "grant_type",
+              "value": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+              "type": "text"
+            },
+            {
+              "key": "assertion",
+              "value": "{{assertion}}",
+              "type": "text"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Generate JWT assertion — same as request 1.",
+              "if (typeof navigator === 'undefined') { navigator = { appName: 'postman' }; }",
+              "if (typeof window   === 'undefined') { window   = {}; }",
+              "",
+              "pm.sendRequest('https://kjur.github.io/jsrsasign/jsrsasign-latest-all-min.js', (err, res) => {",
+              "  if (err) { throw new Error('Failed to load jsrsasign: ' + err); }",
+              "  eval(res.text());",
+              "",
+              "  const rawKey   = pm.collectionVariables.get('jwt_bearer_private_key');",
+              "  const username = pm.collectionVariables.get('jwt_bearer_username');",
+              "  const baseUrl  = pm.collectionVariables.get('base_url');",
+              "  const now      = Math.floor(Date.now() / 1000);",
+              "  const privateKeyPem = rawKey.replace(/\\\\n/g, '\\n').trim();",
+              "",
+              "  let keyObj;",
+              "  try { keyObj = KEYUTIL.getKey(privateKeyPem); }",
+              "  catch(e) { throw new Error('Failed to parse private key: ' + e.message); }",
+              "",
+              "  const header  = { alg: 'RS256', typ: 'JWT' };",
+              "  const payload = {",
+              "    iss:      pm.collectionVariables.get('jwt_bearer_issuer'),",
+              "    sub:      'postman-client',",
+              "    aud:      baseUrl,",
+              "    iat:      now,",
+              "    exp:      now + 300,",
+              "    jti:      'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+              "      const r = Math.random() * 16 | 0;",
+              "      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);",
+              "    }),",
+              "    username: username",
+              "  };",
+              "",
+              "  const assertion = KJUR.jws.JWS.sign('RS256', JSON.stringify(header), JSON.stringify(payload), keyObj);",
+              "  pm.collectionVariables.set('assertion', assertion);",
+              "  console.log('✅ Assertion generated for:', username);",
+              "});"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Returns access_token', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.access_token).to.be.a('string');",
+              "  pm.expect(body.token_type).to.eql('Bearer');",
+              "  pm.collectionVariables.set('access_token', body.access_token);",
+              "  console.log('✅ access_token saved (form-urlencoded)');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "1d — POST /auth/token  (client_credentials — form-urlencoded)",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/auth/token",
+        "description": "Same as request 1b but sends the body as application/x-www-form-urlencoded.\nRequired by Salesforce External Credentials and other OAuth clients.",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "grant_type",
+              "value": "client_credentials",
+              "type": "text"
+            },
+            {
+              "key": "client_id",
+              "value": "{{cc_client_id}}",
+              "type": "text"
+            },
+            {
+              "key": "client_secret",
+              "value": "{{cc_client_secret}}",
+              "type": "text"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Returns client_credentials token', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.access_token).to.be.a('string');",
+              "  pm.expect(body.scope).to.eql('api:full');",
+              "  pm.collectionVariables.set('access_token', body.access_token);",
+              "  console.log('✅ client_credentials token saved (form-urlencoded)');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 — GET /users  (admin sees all)",
       "request": {
         "method": "GET",
         "url": "{{base_url}}/users",
@@ -201,11 +337,10 @@
           "listen": "test",
           "script": {
             "exec": [
-              "// Decode token payload to show which user/role is being used",
               "const token = pm.collectionVariables.get('access_token');",
               "if (token) {",
               "  const payload = JSON.parse(atob(token.split('.')[1]));",
-              "  console.log('\ud83d\udd0d Token role:', payload.role, '| username:', payload.username);",
+              "  console.log('🔍 Token role:', payload.role, '| username:', payload.username);",
               "}",
               "",
               "pm.test('Status 200', () => pm.response.to.have.status(200));",
@@ -220,7 +355,7 @@
       ]
     },
     {
-      "name": "3 \u2014 GET /users/:username  (self or admin)",
+      "name": "3 — GET /users/:username  (self or admin)",
       "request": {
         "method": "GET",
         "url": "{{base_url}}/users/{{username}}",
@@ -248,11 +383,11 @@
       ]
     },
     {
-      "name": "4 \u2014 GET /resource  (mTLS + Bearer token)",
+      "name": "4 — GET /resource  (mTLS + Bearer token)",
       "request": {
         "method": "GET",
-        "url": "{{base_url_mtls}}/resource",
-        "description": "Requires mTLS client cert on port 8443.\nConfigure in Postman Settings \u2192 Certificates.",
+        "url": "{{base_url}}/resource",
+        "description": "Requires mTLS client certificate.\nConfigure in Postman Settings → Certificates → Add Certificate for localhost:8443.",
         "header": [
           {
             "key": "Authorization",
@@ -306,9 +441,7 @@
               "script": {
                 "exec": [
                   "pm.test('Status 201', () => pm.response.to.have.status(201));",
-                  "pm.test('User created', () => {",
-                  "  pm.expect(pm.response.json().message).to.eql('User created');",
-                  "});"
+                  "pm.test('User created', () => { pm.expect(pm.response.json().message).to.eql('User created'); });"
                 ]
               }
             }
@@ -340,9 +473,7 @@
               "script": {
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('User updated', () => {",
-                  "  pm.expect(pm.response.json().message).to.eql('User updated');",
-                  "});"
+                  "pm.test('User updated', () => { pm.expect(pm.response.json().message).to.eql('User updated'); });"
                 ]
               }
             }
@@ -366,9 +497,7 @@
               "script": {
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('User deleted', () => {",
-                  "  pm.expect(pm.response.json().message).to.eql('User deleted');",
-                  "});"
+                  "pm.test('User deleted', () => { pm.expect(pm.response.json().message).to.eql('User deleted'); });"
                 ]
               }
             }
@@ -384,7 +513,7 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/clients/register",
-            "description": "Register a new client app. Returns client_id + client_secret.\nStore the secret securely \u2014 it will never be shown again.",
+            "description": "Register a new client app. Returns client_id + client_secret.\nStore the secret securely — it will never be shown again.",
             "header": [
               {
                 "key": "Authorization",
@@ -410,11 +539,10 @@
                   "  const body = pm.response.json();",
                   "  pm.expect(body.client_id).to.be.a('string');",
                   "  pm.expect(body.client_secret).to.be.a('string');",
-                  "  // Save for use in client_credentials token request",
                   "  pm.collectionVariables.set('cc_client_id', body.client_id);",
                   "  pm.collectionVariables.set('cc_client_secret', body.client_secret);",
-                  "  console.log('\u2705 client_id saved:', body.client_id);",
-                  "  console.log('\u26a0\ufe0f  Store this secret \u2014 shown once:', body.client_secret);",
+                  "  console.log('✅ client_id saved:', body.client_id);",
+                  "  console.log('⚠️  Store this secret — shown once:', body.client_secret);",
                   "});"
                 ]
               }
@@ -439,11 +567,7 @@
               "script": {
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Returns client list', () => {",
-                  "  const body = pm.response.json();",
-                  "  pm.expect(body.clients).to.be.an('array');",
-                  "  console.log('Total clients:', body.total);",
-                  "});"
+                  "pm.test('Returns client list', () => { const body = pm.response.json(); pm.expect(body.clients).to.be.an('array'); console.log('Total clients:', body.total); });"
                 ]
               }
             }
@@ -467,9 +591,7 @@
               "script": {
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Client revoked', () => {",
-                  "  pm.expect(pm.response.json().message).to.eql('Client revoked');",
-                  "});"
+                  "pm.test('Client revoked', () => { pm.expect(pm.response.json().message).to.eql('Client revoked'); });"
                 ]
               }
             }
@@ -498,11 +620,7 @@
               "script": {
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Returns patients array', () => {",
-                  "  const body = pm.response.json();",
-                  "  pm.expect(body.patients).to.be.an('array');",
-                  "  console.log('Patients returned:', body.total);",
-                  "});"
+                  "pm.test('Returns patients array', () => { const body = pm.response.json(); pm.expect(body.patients).to.be.an('array'); console.log('Patients returned:', body.total); });"
                 ]
               }
             }
@@ -526,11 +644,7 @@
               "script": {
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Returns patient object', () => {",
-                  "  const body = pm.response.json();",
-                  "  pm.expect(body.patient).to.be.an('object');",
-                  "  pm.expect(body.patient.id).to.be.a('string');",
-                  "});"
+                  "pm.test('Returns patient object', () => { const body = pm.response.json(); pm.expect(body.patient).to.be.an('object'); pm.expect(body.patient.id).to.be.a('string'); });"
                 ]
               }
             }
@@ -562,13 +676,7 @@
               "script": {
                 "exec": [
                   "pm.test('Status 201', () => pm.response.to.have.status(201));",
-                  "pm.test('Patient created', () => {",
-                  "  const body = pm.response.json();",
-                  "  pm.expect(body.patient.id).to.be.a('string');",
-                  "  // Save id for subsequent requests",
-                  "  pm.collectionVariables.set('patient_id', body.patient.id);",
-                  "  console.log('\u2705 patient_id saved:', body.patient.id);",
-                  "});"
+                  "pm.test('Patient created', () => { const body = pm.response.json(); pm.expect(body.patient.id).to.be.a('string'); pm.collectionVariables.set('patient_id', body.patient.id); console.log('✅ patient_id saved:', body.patient.id); });"
                 ]
               }
             }
@@ -591,7 +699,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"diagnosis\": \"Seasonal Allergies \\u2014 under treatment\",\n  \"phone\": \"555-200-9999\"\n}"
+              "raw": "{\n  \"diagnosis\": \"Seasonal Allergies — under treatment\",\n  \"phone\": \"555-200-9999\"\n}"
             }
           },
           "event": [
@@ -600,11 +708,7 @@
               "script": {
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Patient updated', () => {",
-                  "  const body = pm.response.json();",
-                  "  pm.expect(body.patient).to.be.an('object');",
-                  "  pm.expect(body.patient.updatedAt).to.be.a('string');",
-                  "});"
+                  "pm.test('Patient updated', () => { const body = pm.response.json(); pm.expect(body.patient).to.be.an('object'); pm.expect(body.patient.updatedAt).to.be.a('string'); });"
                 ]
               }
             }
@@ -628,9 +732,7 @@
               "script": {
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Patient deleted', () => {",
-                  "  pm.expect(pm.response.json().message).to.eql('Patient deleted');",
-                  "});"
+                  "pm.test('Patient deleted', () => { pm.expect(pm.response.json().message).to.eql('Patient deleted'); });"
                 ]
               }
             }
@@ -642,10 +744,10 @@
       "name": "Error cases",
       "item": [
         {
-          "name": "GET /resource without token \u2192 401",
+          "name": "GET /resource without token → 401",
           "request": {
             "method": "GET",
-            "url": "{{base_url_mtls}}/resource"
+            "url": "{{base_url}}/resource"
           },
           "event": [
             {
@@ -659,7 +761,7 @@
           ]
         },
         {
-          "name": "GET /users other user as viewer \u2192 403",
+          "name": "GET /users other user as viewer → 403",
           "request": {
             "method": "GET",
             "url": "{{base_url}}/users/sgummalla@exp-cloud.org",
@@ -683,7 +785,7 @@
           ]
         },
         {
-          "name": "GET /patients/:id viewer accessing other's record \u2192 403",
+          "name": "GET /patients/:id viewer accessing other's record → 403",
           "request": {
             "method": "GET",
             "url": "{{base_url}}/patients/pat-001",
@@ -707,7 +809,7 @@
           ]
         },
         {
-          "name": "DELETE /patients/:id as viewer \u2192 403",
+          "name": "DELETE /patients/:id as viewer → 403",
           "request": {
             "method": "DELETE",
             "url": "{{base_url}}/patients/pat-003",
@@ -738,15 +840,14 @@
       "script": {
         "type": "text/javascript",
         "exec": [
-          "// \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+          "// ─────────────────────────────────────────────────────────────",
           "// Collection pre-request: auto-obtain access_token before every request.",
           "// Skips token refresh for the /auth/token request itself.",
-          "// \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+          "// ─────────────────────────────────────────────────────────────",
           "",
           "const requestUrl = pm.request.url.toString();",
           "if (requestUrl.includes('/auth/token')) { return; }",
           "",
-          "// Check if current token is still valid",
           "const existingToken = pm.collectionVariables.get('access_token');",
           "if (existingToken) {",
           "  try {",
@@ -755,10 +856,10 @@
           "    const secsLeft = p.exp - Math.floor(Date.now() / 1000);",
           "    const tokenUser = p.username || p.clientId;",
           "    if (secsLeft > 60 && tokenUser === username) {",
-          "      console.log('\u2705 Token valid for:', tokenUser, '| role:', p.role, '| expires in:', secsLeft + 's');",
+          "      console.log('✅ Token valid for:', tokenUser, '| role:', p.role, '| expires in:', secsLeft + 's');",
           "      return;",
           "    }",
-          "  } catch(e) { /* invalid token \u2014 fall through to refresh */ }",
+          "  } catch(e) { /* invalid token — fall through to refresh */ }",
           "}",
           "",
           "if (typeof navigator === 'undefined') { navigator = { appName: 'postman' }; }",
@@ -773,15 +874,13 @@
           "  const baseUrl   = pm.collectionVariables.get('base_url');",
           "  const now       = Math.floor(Date.now() / 1000);",
           "",
-          "  // Normalize key \u2014 Postman stores newlines as literal \\n",
           "  const privateKeyPem = rawKey.replace(/\\\\n/g, '\\n').trim();",
           "",
-          "  // Parse key object \u2014 handles PKCS8 and RSA formats",
           "  let keyObj;",
           "  try {",
           "    keyObj = KEYUTIL.getKey(privateKeyPem);",
           "  } catch(e) {",
-          "    throw new Error('Failed to parse private key: ' + e.message + ' \u2014 check private_key variable');",
+          "    throw new Error('Failed to parse private key: ' + e.message + ' — check private_key variable');",
           "  }",
           "",
           "  const header  = { alg: 'RS256', typ: 'JWT' };",
@@ -800,7 +899,6 @@
           "",
           "  const assertion = KJUR.jws.JWS.sign('RS256', JSON.stringify(header), JSON.stringify(payload), keyObj);",
           "",
-          "  // Exchange assertion for access_token",
           "  pm.sendRequest({",
           "    url:    baseUrl + '/auth/token',",
           "    method: 'POST',",
@@ -810,7 +908,7 @@
           "    if (tokenErr) { throw new Error('Token request failed: ' + tokenErr); }",
           "    if (tokenRes.code !== 200) { throw new Error('Token request failed: ' + tokenRes.status + ' ' + tokenRes.text()); }",
           "    pm.collectionVariables.set('access_token', tokenRes.json().access_token);",
-          "    console.log('\u2705 Fresh access_token obtained for:', username);",
+          "    console.log('✅ Fresh access_token obtained for:', username);",
           "  });",
           "});"
         ]

@@ -14,7 +14,8 @@ fly auth login
 
 ## 1 — Verify your fly.toml
 
-Your existing `fly.toml` is already correct. Confirm it looks like this:
+Your `fly.toml` should expose **only port 443** with raw TCP passthrough so the
+client certificate reaches the app (Fly does **not** terminate TLS):
 
 ```toml
 app = "mtls-api"
@@ -24,20 +25,11 @@ primary_region = "iad"
   dockerfile = "Dockerfile"
 
 [[services]]
-  internal_port = 8080       # plain HTTP — Fly terminates TLS on port 443
+  internal_port = 8443       # mTLS HTTPS — raw TCP passthrough
   protocol = "tcp"
+
   [[services.ports]]
     port = 443
-    handlers = ["tls"]
-  [[services.ports]]
-    port = 80
-    handlers = ["http"]
-
-[[services]]
-  internal_port = 8443       # raw TCP passthrough — true mTLS
-  protocol = "tcp"
-  [[services.ports]]
-    port = 8443
     handlers = []            # no handler = raw TCP, client cert reaches your app
 
 [[vm]]
@@ -100,19 +92,26 @@ fly status
 fly scale show
 ```
 
-Test the public endpoint (no mTLS):
+All requests now go to port 443 with a client certificate:
+
 ```bash
-curl https://mtls-api.fly.dev/
-# Expected: {"message":"Public endpoint","status":"ok"}
+# Public endpoint (no mTLS middleware, but still TLS)
+curl --cacert certs/ca.crt \
+     https://mtls-api.fly.dev/
+
+# mTLS-protected endpoint
+curl --cert certs/client.crt \
+     --key  certs/client.key \
+     --cacert certs/ca.crt \
+     https://mtls-api.fly.dev/resource
 ```
 
-Test the mTLS endpoint:
+Local development (port 8443):
 ```bash
 curl --cert certs/client.crt \
      --key  certs/client.key \
      --cacert certs/ca.crt \
-     https://mtls-api.fly.dev:8443/
-# Expected: {"message":"Public endpoint","status":"ok"}
+     https://localhost:8443/resource
 ```
 
 ---
@@ -126,9 +125,9 @@ fly logs -a mtls-api
 # SSH into the running VM
 fly ssh console
 
-# Check if port 8443 is reachable
+# Verify mTLS handshake on port 443
 openssl s_client \
-  -connect mtls-api.fly.dev:8443 \
+  -connect mtls-api.fly.dev:443 \
   -cert certs/client.crt \
   -key  certs/client.key \
   -CAfile certs/ca.crt
@@ -142,6 +141,6 @@ fly deploy --no-cache
 | Problem | Fix |
 |---|---|
 | `Missing: SERVER_KEY` in logs | Re-run `fly secrets set SERVER_KEY=...` and redeploy |
-| Port 8443 connection refused | Check `fly.toml` has `handlers = []` (not `["tls"]`) for the 8443 service |
 | `certificate verify failed` | Ensure `CLIENT_CA_CERT` matches the CA that signed your client cert |
+| Connection refused on 443 | Confirm `fly.toml` has `handlers = []` (not `["tls"]`) — Fly must not terminate TLS |
 | App crashes on start | Run `fly logs` — usually a missing secret or cert parse error |

@@ -29,7 +29,6 @@ RUN node --check server.js && \
     node --check src/middleware/requireRole.js && \
     echo "✅ All files validated"
 
-EXPOSE 8080
 EXPOSE 8443
 
 CMD ["node", "server.js"]

@@ -9,25 +9,16 @@ primary_region = "iad"
 [build]
   dockerfile = "Dockerfile"
 
-[[services]]
-  internal_port = 8080
-  protocol = "tcp"
-
-  [[services.ports]]
-    port = 443
-    handlers = ["tls"]
-
-  [[services.ports]]
-    port = 80
-    handlers = ["http"]
-
+# Port 8443 with handlers = [] = raw TCP passthrough.
+# Fly does NOT terminate TLS — the Node mTLS server handles the handshake
+# directly so the client certificate is visible for mTLS enforcement.
 [[services]]
   internal_port = 8443
   protocol = "tcp"
 
   [[services.ports]]
     port = 8443
-    handlers = []
+    handlers = []   # raw TCP passthrough — mTLS terminates in the app
 
 [[vm]]
   memory = '1gb'

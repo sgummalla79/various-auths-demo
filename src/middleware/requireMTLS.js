@@ -1,13 +1,13 @@
 // -----------------------------------------------
 // mTLS Middleware
 //
-// Enforces client certificate on port 8443.
+// Enforces client certificate on every request.
 // Logs: CN + fingerprint prefix (cert identity, not PII)
 // -----------------------------------------------
 const requireMTLS = (req, res, next) => {
   if (!req.socket || typeof req.socket.getPeerCertificate !== 'function') {
-    console.warn(`[${req.requestId}] mTLS ❌ — not connected via port 8443`);
-    return res.status(401).json({ error: 'mTLS required — connect via port 8443 with a client certificate' });
+    console.warn(`[${req.requestId}] mTLS ❌ — socket does not support client certificates`);
+    return res.status(401).json({ error: 'mTLS required — connect with a client certificate' });
   }
 
   const cert = req.socket.getPeerCertificate();
