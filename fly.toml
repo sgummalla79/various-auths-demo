@@ -1,27 +1,32 @@
-# fly.toml app configuration file generated for mtls-api on 2026-02-17T21:42:51-08:00
-#
-# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
-#
-
-app = "mtls-api"
-primary_region = "iad"
+app            = "mtls-api"
+primary_region = "lax"
 
 [build]
   dockerfile = "Dockerfile"
 
-# Port 8443 with handlers = [] = raw TCP passthrough.
-# Fly does NOT terminate TLS — the Node mTLS server handles the handshake
-# directly so the client certificate is visible for mTLS enforcement.
+[http_service]
+  internal_port        = 8080
+  force_https          = true
+  auto_stop_machines   = false
+  auto_start_machines  = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval     = "30s"
+    method       = "GET"
+    path         = "/health"
+    timeout      = "5s"
+
 [[services]]
   internal_port = 8443
-  protocol = "tcp"
+  protocol      = "tcp"
 
   [[services.ports]]
-    port = 8443
-    handlers = []   # raw TCP passthrough — mTLS terminates in the app
+    port     = 8443
+    handlers = []
 
 [[vm]]
-  memory = '1gb'
+  memory   = '1gb'
   cpu_kind = 'shared'
-  cpus = 1
-  memory_mb = 1024
+  cpus     = 1
